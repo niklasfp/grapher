@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net5.0</TargetFramework>
+    <TypeScriptToolsVersion>4.4</TypeScriptToolsVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,8 +10,18 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="5.0.8" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Authentication.WebAssembly.Msal" Version="5.0.8" />
     <PackageReference Include="Microsoft.Graph" Version="4.1.0" />
+    <PackageReference Include="Microsoft.TypeScript.MSBuild" Version="4.4.4">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="System.Net.Http.Json" Version="5.0.0" />
     <PackageReference Include="TimeZoneConverter" Version="3.5.0" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <Watch Include="scripts/*" Exclude="wwwroot\**\*" />
+    <TypeScriptCompile Include="content/exampleJsInterop.ts" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,145 @@
+<!-- Copyright (c) Microsoft Corporation.
+     Licensed under the MIT license. -->
+
+@page "/mail"
+@using Microsoft.Graph
+@using System.IO
+@using TimeZoneConverter
+@inject IJSRuntime JSRuntime
+
+@inject GraphTutorial.Graph.GraphClientFactory clientFactory
+
+<AuthorizeView>
+    <!-- <CalendarViewSnippet> -->
+    <Authorized>
+        <h1 class="mb-3">Mails</h1>
+        <a href="/newmail" class="btn btn-light btn-sm mb-3">New e-mail</a>
+
+        @if (messages.Count == 0)
+        {
+            <div class="spinner-border text-primary" role="status">
+                <span class="sr-only">Loading...</span>
+            </div>
+        }
+
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Sender</th>
+                    <th>Subject</th>
+                    <th>Received</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var message in messages)
+                {
+                    <tr @onclick=@(async ()=> { selectedMailId = message.Id; await GetEmail(message.Id); }) style="cursor: pointer">
+                        <td>@message.Sender?.EmailAddress?.Name</td>
+                        <td>@message.Subject</td>
+                        <td>@message.ReceivedDateTime</td>
+                        <td><a href="@message.WebLink">View</a></td>
+                        @* <td><button class="btn btn-light btn-sm mb-3" @onclick=@(async ()=> await
+                            GetEmail(message.Id))>Download</button></td> *@
+
+                        @* <td>@FormatIso8601DateTime(calendarEvent.End.DateTime)</td> *@
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <button  class="btn btn-light btn-sm mb-3" @onclick="SaveEml" >Save as file</button>
+        <div hidden=@(emlMessage == null)>
+            <h3 class="mb-3">Eml content</h3>
+            <div class="border rounded overflow-auto" style="overflow:auto">
+                <pre class="text-monospace scrollable">
+                    @emlMessage
+                </pre>
+            </div>
+        </div>
+    </Authorized>
+    <!-- </CalendarViewSnippet> -->
+    <NotAuthorized>
+        <RedirectToLogin />
+    </NotAuthorized>
+</AuthorizeView>
+
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private GraphServiceClient graphClient;
+    private IList<Message> messages = new List<Message>();
+    private string dateTimeFormat;
+    private string emlMessage;
+
+    private string selectedMailId;
+
+    // <GetEventsSnippet>
+    protected override async Task OnInitializedAsync()
+    {
+        // Get the user
+        var user = (await authenticationStateTask).User;
+        var graphTimeZone = user.GetUserGraphTimeZone();
+        dateTimeFormat = $"{user.GetUserGraphDateFormat()} {user.GetUserGraphTimeFormat()}";
+
+        graphClient = clientFactory.GetAuthenticatedClient();
+
+        var mailPage = await graphClient
+
+        .Me.Messages.Request()
+        .Header("Prefer", $"outlook.timezone=\"{graphTimeZone}\"")
+        .Top(50)
+        .Select(m => new
+        {
+            m.ReceivedDateTime,
+            m.Subject,
+            m.Sender,
+            m.Id,
+            m.WebLink
+        })
+        .GetAsync();
+
+        messages = mailPage.CurrentPage;
+    }
+
+    private async Task<Stream> GetEmailStream(string id)
+    {
+        return  await graphClient
+        .Me
+        .Messages[id].Content
+        .Request()
+        .GetAsync();
+    }
+
+    private async Task SaveEml()
+    {
+        using var stream = await GetEmailStream(selectedMailId);
+        using var reader = new BinaryReader(stream);
+        var bytes = reader.ReadBytes((int)stream.Length);
+        await JSRuntime.InvokeAsync<object>("saveAsFile","save.eml", System.Convert.ToBase64String(bytes)); 
+    }
+
+    private async Task GetEmail(string id)
+    {
+        emlMessage = await new StreamReader(await GetEmailStream(id)).ReadToEndAsync();
+    }
+
+    // <FormatDateSnippet>
+    private string FormatIso8601DateTime(string iso8601DateTime)
+    {
+        // Load into a DateTime
+        var dateTime = DateTime.Parse(iso8601DateTime);
+
+        if (!string.IsNullOrWhiteSpace(dateTimeFormat))
+        {
+            // Format it using the user's settings
+            return dateTime.ToString(dateTimeFormat);
+        }
+
+        // Fallback to return original value
+        return iso8601DateTime;
+    }
+    // </FormatDateSnippet>
+}

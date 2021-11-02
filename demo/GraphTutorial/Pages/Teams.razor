@@ -1,0 +1,190 @@
+<!-- Copyright (c) Microsoft Corporation.
+     Licensed under the MIT license. -->
+
+@page "/teams"
+@using Microsoft.Graph
+@using System.IO
+@using TimeZoneConverter
+
+@inject GraphTutorial.Graph.GraphClientFactory clientFactory
+
+<AuthorizeView>
+    <!-- <CalendarViewSnippet> -->
+    <Authorized>
+        <h1 class="mb-3">My Teams</h1>
+
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Id</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var team in joinedTeams)
+                {
+                    <tr style="cursor: pointer"  @onclick=@(async ()=> await SetSelectedTeam(team))>
+                        <td>@team.DisplayName</td>
+                        <td>@team.Description</td>
+                        <td>@team.Id</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (selectedTeam != null)
+        {
+            @if (!string.IsNullOrEmpty(status))
+            {
+                <div class="alert @(isError ? "alert-danger" : "alert-success")">@status</div>
+            }
+
+            <hr/>
+            <h6>Send a message to a channel in team <strong>@selectedTeam.DisplayName</strong></h6>
+            <form>
+                <div class="form-group">
+                    <label>Channel</label>
+                    <select id="channel" class="form-control" @bind="@selectedChannelId">
+                        @foreach(var channel in selectedTeam.Channels.CurrentPage)
+                        {
+                            <option  value="@channel.Id">@channel.DisplayName</option>
+                        }
+                    </select>
+                    @* <input @bind="channel" class="form-control" /> *@
+                </div>
+                <div class="form-group">
+                    <label>Message</label>
+                    <textarea @bind="messageBody" class="form-control"></textarea>
+                </div>
+            </form>
+            <button class="btn btn-primary mr-2" @onclick="SendMessage">Send</button>
+            <button class="btn btn-secondrary" @onclick=@(()=> selectedTeam = null)>Cancel</button>
+        }
+    </Authorized>
+    <!-- </CalendarViewSnippet> -->
+    <NotAuthorized>
+        <RedirectToLogin />
+    </NotAuthorized>
+</AuthorizeView>
+
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private GraphServiceClient graphClient;
+    private string dateTimeFormat;
+
+    private IList<Team> joinedTeams = new List<Team>();
+
+    private Team selectedTeam = default!;
+
+    private string messageBody;
+    private Channel channel;
+
+    private string selectedChannelId;
+
+    private string status;
+    private bool isError;
+
+    // <GetEventsSnippet>
+    protected override async Task OnInitializedAsync()
+    {
+        // Get the user
+        var user = (await authenticationStateTask).User;
+        var graphTimeZone = user.GetUserGraphTimeZone();
+        dateTimeFormat = $"{user.GetUserGraphDateFormat()} {user.GetUserGraphTimeFormat()}";
+
+        graphClient = clientFactory.GetAuthenticatedClient();
+
+         var joinedTeamsPage = await graphClient
+            .Me.JoinedTeams
+            .Request()
+            .Select(t => new 
+            {
+                t.Id,
+                t.DisplayName,
+                t.Description,
+            })
+            .GetAsync();
+
+
+        joinedTeams = joinedTeamsPage.CurrentPage;
+
+      //  Console.WriteLine(joinedTeams.First().Channels.Count);
+    }
+
+    private async Task<IList<Channel>> SetSelectedTeam(Team team)
+    {
+         graphClient = clientFactory.GetAuthenticatedClient();
+
+         var teamChannels = await graphClient
+            .Teams[team.Id].Channels
+            .Request()
+            .Select(c => new 
+            {
+                c.Id,
+                c.DisplayName,
+                c.Description,
+            })
+            .GetAsync();
+
+         isError = false;
+         status = string.Empty;
+         team.Channels = teamChannels;
+         selectedChannelId = teamChannels.CurrentPage?.First().Id;
+
+         selectedTeam = team;
+         return teamChannels.CurrentPage;
+    }
+
+    private async Task SendMessage()
+    {
+         graphClient = clientFactory.GetAuthenticatedClient();
+
+        var chatMessage = new ChatMessage
+        {
+            Body = new ItemBody
+            {
+                ContentType = BodyType.Text,
+                Content = messageBody
+            }
+        };
+
+        Console.WriteLine("Sending message to: " + selectedChannelId);
+
+        try
+        {
+            await graphClient.Teams[selectedTeam.Id].Channels[selectedChannelId].Messages
+                .Request()
+                .AddAsync(chatMessage);
+                
+                status = "Message sent";
+                messageBody = string.Empty;
+        }
+        catch (ServiceException exception)
+        {
+            isError = true;
+            status = exception.Message;
+        }
+
+    }
+
+    // <FormatDateSnippet>
+    private string FormatIso8601DateTime(string iso8601DateTime)
+    {
+        // Load into a DateTime
+        var dateTime = DateTime.Parse(iso8601DateTime);
+
+        if (!string.IsNullOrWhiteSpace(dateTimeFormat))
+        {
+            // Format it using the user's settings
+            return dateTime.ToString(dateTimeFormat);
+        }
+
+        // Fallback to return original value
+        return iso8601DateTime;
+    }
+    // </FormatDateSnippet>
+}

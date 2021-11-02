@@ -1,0 +1,97 @@
+<!-- Copyright (c) Microsoft Corporation.
+     Licensed under the MIT license. -->
+
+<!-- <NewEventFormSnippet> -->
+@page "/newmail"
+@using Microsoft.Graph
+
+@inject GraphTutorial.Graph.GraphClientFactory clientFactory
+
+<AuthorizeView>
+    <Authorized>
+        @if (!string.IsNullOrEmpty(status))
+        {
+            <div class="alert @(isError ? "alert-danger" : "alert-success")">@status</div>
+        }
+        <form>
+            <div class="form-group">
+                <label>To</label>
+                <input @bind="to" class="form-control" />
+            </div>
+            <div class="form-group">
+                <label>Subject</label>
+                <input @bind="subject" class="form-control" />
+            </div>
+            <div class="form-group">
+                <label>Message</label>
+                <textarea @bind="body" class="form-control"></textarea>
+            </div>
+        </form>
+        <button class="btn btn-primary mr-2" @onclick="SendMail">Send</button>
+        <a href="/mail" class="btn btn-secondrary">Cancel</a>
+    </Authorized>
+    <NotAuthorized>
+        <RedirectToLogin />
+    </NotAuthorized>
+</AuthorizeView>
+
+<!-- </NewEventFormSnippet> -->
+
+<!-- <NewEventCodeSnippet> -->
+@code{
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private string status;
+    private bool isError;
+    private string userTimeZone;
+    private string subject;
+    private string to;
+    private string body;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get the user's time zone
+        var user = (await authenticationStateTask).User;
+        userTimeZone = user.GetUserGraphTimeZone() ?? "UTC";
+    }
+
+    private async Task SendMail()
+    {
+        // Initalize an Event object
+        // with user input
+        var newMail = new Message
+        {
+            Subject = subject,
+            Body = new ItemBody
+            {
+                Content = body,
+                ContentType = BodyType.Text
+            },
+            ToRecipients = new List<Recipient>()
+            {
+                new Recipient { EmailAddress = new EmailAddress { Address = to} }
+            }
+        };
+
+        var graphClient = clientFactory.GetAuthenticatedClient();
+
+        try
+        {
+            // POST /me/events
+            await graphClient.Me
+                .SendMail(newMail, null)
+                .Request()
+                .PostAsync();
+
+            isError = false;
+            status = "Mail sent";
+        }
+        catch (ServiceException exception)
+        {
+            isError = true;
+            status = exception.Message;
+        }
+    }
+}
+<!-- </NewEventCodeSnippet> -->
